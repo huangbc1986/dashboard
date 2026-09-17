@@ -14,6 +14,11 @@ class Config:
     ADB_SERIAL = os.environ.get("ADB_SERIAL", "")
 
     CAPTURE_NAME_FILTERS = ("MACROSILICON", "USB3 Video", "USB2 Video", "USB Video")
+    # Pin HDMI capture to a V4L2 node at startup. Empty = first matching card.
+    # Accepts /dev/videoN, videoN, N, or a /dev/v4l/by-id/... symlink.
+    CAPTURE_VIDEO_DEVICE = (
+        os.environ.get("CAPTURE_VIDEO_DEVICE") or os.environ.get("V4L2_DEVICE") or ""
+    ).strip()
     DEFAULT_WIDTH = 1920
     DEFAULT_HEIGHT = 1080
     DEFAULT_FPS = 60

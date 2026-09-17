@@ -18,6 +18,10 @@ def create_app(config_class=Config):
     )
     app.config.from_object(config_class)
 
+    pinned = (app.config.get("CAPTURE_VIDEO_DEVICE") or "").strip()
+    if pinned:
+        app.logger.info("HDMI capture pinned to %s", pinned)
+
     from app.routes.pages import pages_bp
     from app.routes.api import api_bp
 

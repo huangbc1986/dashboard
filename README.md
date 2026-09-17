@@ -69,6 +69,14 @@ pip install -r requirements.txt
 python run.py
 ```
 
+本机若有多个 V4L2 节点（常见于一张采集卡同时露出 `/dev/video0` 与 `/dev/video1`），启动时用环境变量钉死采集节点，面板上不提供选择：
+
+```bash
+CAPTURE_VIDEO_DEVICE=/dev/video1 python run.py
+# 或更稳的 by-id 路径，避免插拔后 video 编号变化：
+CAPTURE_VIDEO_DEVICE=/dev/v4l/by-id/usb-ITE_UGREEN_25173_00000001-video-index0 python run.py
+```
+
 默认监听 `0.0.0.0:5000`。在其他电脑浏览器打开：
 
 ```text
@@ -83,6 +91,8 @@ http://<工作站IP>:5000
 | `DASHBOARD_PORT` | 端口 | `5000` |
 | `ADB_PATH` | adb 可执行文件 | `adb` |
 | `ADB_SERIAL` | 指定设备序列号 | 空（取第一台 online 设备） |
+| `CAPTURE_VIDEO_DEVICE` | 指定 V4L2 采集节点（`/dev/videoN`、`videoN`、`N`，或 `/dev/v4l/by-id/...`） | 空（取第一台匹配的采集卡） |
+| `V4L2_DEVICE` | 同上别名 | 空 |
 | `SECRET_KEY` | Flask/SocketIO secret | 开发默认值 |
 | `WEBRTC_STUN_URLS` | WebRTC STUN（逗号分隔） | `stun:stun.l.google.com:19302` |
 | `WEBRTC_TURN_URLS` | WebRTC TURN（可选，逗号分隔） | 空 |
@@ -153,8 +163,8 @@ run.py
 ## 故障排查（HDMI / WebRTC）
 
 - 采集依赖本机 `ffmpeg`（经 V4L2 MJPEG 管道），不是 OpenCV 直采。
-- 若提示 `Device or resource busy`：确认没有其他进程占用 `/dev/video0`，然后重启 Dashboard。
-- 画面全黑但连接成功：检查开发板 HDMI 是否已接到采集卡、输入源是否有信号。
+- 若提示 `Device or resource busy`：确认没有其他进程占用 `CAPTURE_VIDEO_DEVICE`（未设置时通常是 `/dev/video0`），然后重启 Dashboard。
+- 画面全黑但连接成功：检查开发板 HDMI 是否已接到采集卡、输入源是否有信号；若本机有两个 V4L2 节点，确认 `CAPTURE_VIDEO_DEVICE` 指向真正的采集节点而不是 metadata 节点。
 - 面板状态会显示 ICE / PeerConnection 状态；信令需先连通再发 Offer。
 - **外网/DMZ 能开页面但无音视频**：原先服务端只宣告局域网 ICE 候选。现已默认启用 STUN；请重启 Dashboard，并用公网地址访问。若仍失败（对称 NAT），自建 TURN 并设置 `WEBRTC_TURN_*`。
 - **跨网段能开页面但 WebRTC 为 closed**：信令走 TCP:5000，媒体走 UDP。默认将服务端 ICE UDP 限制在 `40000-40199`，请在中间防火墙放行到 Dashboard 主机的该 UDP 范围（可用 `WEBRTC_UDP_PORT_MIN/MAX` 调整）。Answer 后服务端会经 `hdmi:ice` trickle 候选。

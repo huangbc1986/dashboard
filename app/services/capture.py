@@ -13,6 +13,8 @@ from flask import current_app
 
 logger = logging.getLogger(__name__)
 
+_VIDEO_NODE_RE = re.compile(r"^(?:/dev/)?(?:video)?(\d+)$")
+
 
 def _read_text(path: str) -> str:
     try:
@@ -219,6 +221,78 @@ def _fps_from_dv_text(text: str) -> float | None:
     return pixelclock / (ht * vt)
 
 
+def normalize_video_device(value: str) -> str:
+    """Accept /dev/videoN, videoN, N, or a by-id/by-path symlink."""
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    match = _VIDEO_NODE_RE.fullmatch(raw)
+    if match:
+        return f"/dev/video{match.group(1)}"
+    return raw
+
+
+def _canonical_video_path(path: str) -> str:
+    if not path:
+        return ""
+    resolved = os.path.realpath(path) if os.path.exists(path) else path
+    base = os.path.basename(resolved)
+    if re.fullmatch(r"video\d+", base):
+        return f"/dev/{base}"
+    return resolved
+
+
+def _same_video_device(a: str, b: str) -> bool:
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    return _canonical_video_path(a) == _canonical_video_path(b)
+
+
+def pinned_video_device() -> str:
+    return normalize_video_device(current_app.config.get("CAPTURE_VIDEO_DEVICE") or "")
+
+
+def _select_primary_video(videos: list[dict[str, Any]]) -> dict[str, Any] | None:
+    pinned = pinned_video_device()
+    if pinned:
+        canonical = _canonical_video_path(pinned)
+        for dev in videos:
+            candidates = list(dev.get("nodes") or [])
+            device = dev.get("device")
+            if device:
+                candidates.append(device)
+            if any(_same_video_device(pinned, node) for node in candidates):
+                chosen = dict(dev)
+                chosen["device"] = canonical
+                chosen["pinned"] = True
+                return chosen
+        if os.path.exists(canonical):
+            sys_name = os.path.join(
+                "/sys/class/video4linux", os.path.basename(canonical), "name"
+            )
+            return {
+                "name": _read_text(sys_name) or os.path.basename(canonical),
+                "device": canonical,
+                "nodes": [canonical],
+                "matched": True,
+                "pinned": True,
+            }
+        logger.warning("CAPTURE_VIDEO_DEVICE=%s is missing", pinned)
+        return {
+            "name": pinned,
+            "device": canonical,
+            "nodes": [canonical],
+            "matched": False,
+            "pinned": True,
+            "error": f"video device missing: {pinned}",
+        }
+
+    matched = [d for d in videos if d.get("matched")]
+    return (matched or videos)[0] if videos else None
+
+
 def detect_input_fps(device: str | None) -> int:
     """Best-effort HDMI/DV input rate for a V4L2 capture node."""
     fallback = int(current_app.config.get("DEFAULT_FPS") or 60)
@@ -248,15 +322,17 @@ def detect_input_fps(device: str | None) -> int:
 def get_capture_status() -> dict[str, Any]:
     videos = list_video_devices()
     audios = list_alsa_capture()
-    matched_videos = [d for d in videos if d.get("matched")]
-    primary_video = (matched_videos or videos)[0] if videos else None
+    primary_video = _select_primary_video(videos)
     primary_audio = audios[0] if audios else None
+    path = (primary_video or {}).get("device") or ""
+    available = bool(primary_video) and os.path.exists(path) and not primary_video.get("error")
     return {
-        "available": primary_video is not None,
+        "available": available,
         "video": primary_video,
         "audio": primary_audio,
         "videos": videos,
         "audios": audios,
+        "pinned": pinned_video_device() or None,
     }
 
 

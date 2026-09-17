@@ -848,7 +848,13 @@ const Dashboard = (() => {
       const res = await fetch("/api/status");
       const data = await res.json();
       updatePill("status-adb", data.adb?.available, data.adb?.selected?.serial || "无设备");
-      const hdmiName = data.hdmi?.video?.name || data.hdmi?.video?.device || "未检测到采集卡";
+      let hdmiName = "未检测到采集卡";
+      if (data.hdmi?.video?.device) {
+        const name = data.hdmi.video.name || "采集卡";
+        hdmiName = `${name} · ${data.hdmi.video.device}`;
+      } else if (data.hdmi?.pinned) {
+        hdmiName = `未找到 ${data.hdmi.pinned}`;
+      }
       updatePill("status-hdmi", data.hdmi?.available, hdmiName);
     } catch (err) {
       updatePill("status-adb", false, "状态获取失败");

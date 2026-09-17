@@ -44,7 +44,11 @@ def on_hdmi_offer(data):
 
     status = capture.get_capture_status()
     if not status.get("available") or not status.get("video"):
-        emit("hdmi:error", {"error": "HDMI capture device not found"})
+        pinned = status.get("pinned")
+        if pinned:
+            emit("hdmi:error", {"error": f"HDMI capture device not found: {pinned}"})
+        else:
+            emit("hdmi:error", {"error": "HDMI capture device not found"})
         return
 
     width = int(data.get("width") or current_app.config["DEFAULT_WIDTH"])
